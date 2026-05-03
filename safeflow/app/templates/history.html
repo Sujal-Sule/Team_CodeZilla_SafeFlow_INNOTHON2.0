@@ -1,129 +1,99 @@
 {% extends "base.html" %}
-
 {% block title %}SafeFlow - Detection History & Analysis{% endblock %}
-
-{% block head_extra %}
-<style>
-    /* Specific styles for history page can go here or in style.css */
-    .history-main-layout {
-        display: flex;
-        flex-direction: column; /* Stack sections vertically */
-        gap: 25px; /* Space between sections */
-    }
-
-    .filters-card, .chart-card, .table-card {
-        /* Using the .card style from style.css for consistency */
-    }
-
-    .chart-container { /* Ensure this is styled if you didn't put it in main style.css */
-        position: relative;
-        min-height: 350px; /* Give it some min height */
-        height: 45vh; /* Relative to viewport height */
-        width: 100%; /* Take full width of its container */
-        padding: 15px;
-        background-color: #fff; /* White background for chart area */
-        border-radius: 6px;
-        box-sizing: border-box;
-    }
-    #historyAreaChart {
-        border: 1px solid #eee;
-        border-radius: 4px;
-    }
-
-    .table-wrapper { /* For potential horizontal scrolling on small screens */
-        overflow-x: auto;
-    }
-    .no-data-message {
-        text-align: center;
-        padding: 30px;
-        font-style: italic;
-        color: #777;
-        background-color: #f9f9f9;
-        border-radius: 4px;
-    }
-</style>
-{% endblock %}
+{% block page_heading %}Detection History & Analysis{% endblock %}
+{% block page_sub %}Review past detection events and visualize crowd trends for selected areas.{% endblock %}
 
 {% block content %}
-<div class="container history-container"> {# Added .history-container for specific targeting if needed #}
-    <h2>Detection Log History & Analysis</h2>
-    <p>Review past detection events and visualize crowd trends for selected areas.</p>
+<div class="stats-row stats-row-6">
+    <div class="stat-card"><div class="stat-icon si-blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div><div class="stat-label">Total Events</div><div class="stat-value" id="statTotalEvents">--</div><div class="stat-sub green" id="statEventsChange">Loading...</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-green"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></div><div><div class="stat-label">Total Areas</div><div class="stat-value" id="statTotalAreas">--</div><div class="stat-sub muted">Monitored zones</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-cyan"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div><div><div class="stat-label">Avg. Crowd Density</div><div class="stat-value" id="statAvgDensity">-- <small>p/m²</small></div><div class="stat-sub green" id="statDensityChange">--</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-red"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div><div class="stat-label">Peak Density</div><div class="stat-value" id="statPeakDensity">-- <small>p/m²</small></div><div class="stat-sub muted" id="statPeakTime">--</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div><div><div class="stat-label">Total Entries</div><div class="stat-value" id="statTotalEntries">--</div><div class="stat-sub green" id="statEntriesChange">--</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-orange"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg></div><div><div class="stat-label">Total Exits</div><div class="stat-value" id="statTotalExits">--</div><div class="stat-sub muted" id="statExitsChange">--</div></div></div>
+</div>
 
-    <div class="history-main-layout">
-
-        {# Filters Section #}
-        <div class="filters-card card">
-            <h3>Filter Events</h3>
-            <div class="filters"> {# Existing .filters class for flex layout #}
-                <div>
-                    <label for="areaFilter">Filter by Area:</label>
-                    <select id="areaFilter">
-                        <option value="">All Areas</option>
-                        {# Options populated by JavaScript #}
-                    </select>
-                </div>
-                <div>
-                    <label for="startDateFilter">Start Date:</label>
-                    <input type="date" id="startDateFilter">
-                </div>
-                <div>
-                    <label for="endDateFilter">End Date:</label>
-                    <input type="date" id="endDateFilter">
-                </div>
-                <div> {# Wrap buttons for better alignment #}
-                    <button id="applyFilterButton" class="button-primary">Apply Filters & Update</button>
-                    <button id="clearFilterButton" class="button-secondary">Clear Filters</button>
+<div class="history-grid">
+    <div class="history-left">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> Filter Events</div>
+            </div>
+            <button class="card-action-btn" id="exportBtn" style="display:none;">Export Report</button>
+            <div class="filters-row">
+                <div class="filter-group"><label for="areaFilter">Area</label><select id="areaFilter"><option value="">All Areas</option></select></div>
+                <div class="filter-group"><label for="startDateFilter">Start Date</label><input type="date" id="startDateFilter"></div>
+                <div class="filter-group"><label for="endDateFilter">End Date</label><input type="date" id="endDateFilter"></div>
+                <div class="filter-actions">
+                    <button id="applyFilterButton" class="btn-sm btn-primary">Apply Filters</button>
+                    <button id="clearFilterButton" class="btn-sm btn-secondary">Clear</button>
                 </div>
             </div>
         </div>
 
-        {# Chart Section #}
-        <div class="chart-card card">
-            <h3>Crowd Trend Analysis</h3>
-            <div class="chart-container">
-                <canvas id="historyAreaChart"></canvas>
+        <div class="card">
+            <div class="card-head">
+                <div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Crowd Trend Analysis</div>
             </div>
-            <p id="chartStatusMessage" style="text-align:center; font-style:italic; color: #666; margin-top:10px;">
-                Select an area and apply filters to view chart.
-            </p>
+            <div class="chart-container"><canvas id="historyAreaChart"></canvas></div>
+            <p id="chartStatusMessage" style="text-align:center;color:var(--text-muted);font-size:0.85em;margin-top:10px;">Select an area and apply filters to view chart.</p>
         </div>
+    </div>
 
-        {# Table Section #}
-        <div class="table-card card">
-            <h3>Detailed Logs</h3>
-            <div class="table-wrapper">
+    <div class="history-right">
+        <div class="card" style="height:100%;">
+            <div class="card-head">
+                <div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Detailed Logs</div>
+            </div>
+            <div class="table-wrapper" style="flex:1;overflow-y:auto;">
                 <table id="historyTable">
-                    <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>Camera ID</th>
-                            <th>Area Name</th>
-                            <th>Mode</th>
-                            <th>Person Count</th>
-                            <th>Density (p/m²)</th>
-                            <th>Entries</th>
-                            <th>Exits</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTableBody">
-                        {# Rows populated by JavaScript #}
-                        {# Example of a placeholder row for no data, JS will manage this #}
-                        <!-- <tr><td colspan="8" class="no-data-message">Loading history or select filters...</td></tr> -->
-                    </tbody>
+                    <thead><tr><th>TIMESTAMP</th><th>CAMERA ID</th><th>AREA NAME</th><th>MODE</th><th>PERSON COUNT</th><th>DENSITY (P/M²)</th><th>ENTRIES</th><th>EXITS</th></tr></thead>
+                    <tbody id="historyTableBody"></tbody>
                 </table>
             </div>
             <div class="pagination">
-                <button id="prevPageButton" disabled class="button-secondary">Previous</button>
-                <span id="currentPage">Page: 1</span>
-                <button id="nextPageButton" class="button-secondary">Next</button>
+                <span id="paginationInfo" style="color:var(--text-muted);font-size:0.82em;margin-right:auto;"></span>
+                <button id="prevPageButton" disabled class="btn-sm btn-secondary">&lt;</button>
+                <span id="currentPage" style="font-size:0.85em;">Page: 1</span>
+                <button id="nextPageButton" class="btn-sm btn-secondary">&gt;</button>
             </div>
         </div>
-
-    </div> {# End of .history-main-layout #}
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-{# Chart.js CDN should already be in base.html #}
 <script src="{{ url_for('static', path='/js/history.js') }}"></script>
+<script>
+(function(){
+    async function loadHistoryStats(){
+        try {
+            const [logsRes, camsRes] = await Promise.all([
+                fetchWithAuth(API_BASE_URL+'/logs/?limit=10000'),
+                fetchWithAuth(API_BASE_URL+'/cameras/')
+            ]);
+            if(!logsRes.ok || !camsRes.ok) return;
+            const logs = await logsRes.json();
+            const cams = await camsRes.json();
+            const areas = [...new Set(cams.map(c=>c.area_name))];
+            const el = id => document.getElementById(id);
+            if(el('statTotalEvents')) el('statTotalEvents').textContent = logs.length.toLocaleString();
+            if(el('statTotalAreas')) el('statTotalAreas').textContent = areas.length;
+            if(el('statEventsChange')) el('statEventsChange').textContent = '● '+logs.length+' records';
+            let totalDensity=0, peakDensity=0, peakTime='', totalEntries=0, totalExits=0, dCount=0;
+            logs.forEach(l=>{
+                if(l.density!=null){totalDensity+=l.density;dCount++;if(l.density>peakDensity){peakDensity=l.density;peakTime=l.timestamp;}}
+                if(l.entry_count) totalEntries+=l.entry_count;
+                if(l.exit_count) totalExits+=l.exit_count;
+            });
+            if(el('statAvgDensity')) el('statAvgDensity').innerHTML = (dCount?totalDensity/dCount:0).toFixed(2)+' <small>p/m²</small>';
+            if(el('statPeakDensity')) el('statPeakDensity').innerHTML = peakDensity.toFixed(2)+' <small>p/m²</small>';
+            if(el('statPeakTime') && peakTime) el('statPeakTime').textContent = new Date(peakTime).toLocaleString('en',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+            if(el('statTotalEntries')) el('statTotalEntries').textContent = totalEntries.toLocaleString();
+            if(el('statTotalExits')) el('statTotalExits').textContent = totalExits.toLocaleString();
+        } catch(e){ console.warn('Stats load error:',e); }
+    }
+    if(document.getElementById('statTotalEvents')) setTimeout(loadHistoryStats, 500);
+})();
+</script>
 {% endblock %}

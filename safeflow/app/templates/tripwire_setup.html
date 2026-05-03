@@ -2,34 +2,14 @@
 
     {% block title %}SafeFlow - Setup Tripwire for {{ camera.name }}{% endblock %}
     
-    {% block head_extra %}
-    <style>
-        #tripwireCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            cursor: crosshair;
-        }
-        .tripwire-setup-container {
-            position: relative; /* For canvas positioning */
-            width: 640px; /* Match video feed */
-            height: 480px;
-            margin: auto;
-        }
-        #tripwireFeed {
-            width: 100%;
-            height: 100%;
-            border: 1px solid #000;
-        }
-    </style>
-    {% endblock %}
-    
     {% block content %}
     <div class="container">
-        <h2>Setup Tripwire for: {{ camera.name }} ({{ camera.area_name }})</h2>
-        <p>Click two points on the video feed below to draw the tripwire line.</p>
-        <p>Current Line: 
-            <span id="lineCoords">
+        <div class="page-header">
+            <h2>Setup Tripwire: {{ camera.name }}</h2>
+            <p>Area: {{ camera.area_name }} &mdash; Click two points on the video feed to draw the tripwire line.</p>
+        </div>
+        <p style="margin-bottom:16px;color:var(--text-secondary);">Current Line: 
+            <span id="lineCoords" style="color:var(--accent-light);font-weight:600;">
                 {% if camera.tripwire_line_x1 is not none %}
                 ({{camera.tripwire_line_x1}}, {{camera.tripwire_line_y1}}) to ({{camera.tripwire_line_x2}}, {{camera.tripwire_line_y2}})
                 {% else %}
@@ -43,10 +23,12 @@
             <canvas id="tripwireCanvas" width="640" height="480"></canvas>
         </div>
         
-        <button id="saveTripwireButton">Save Tripwire Line</button>
-        <button id="clearTripwireButton">Clear Line Drawing</button>
-        <p id="tripwireStatus"></p>
-        <p><a href="{{ url_for('dashboard') }}">Back to Dashboard</a></p>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;">
+            <button id="saveTripwireButton" class="btn-primary">Save Tripwire Line</button>
+            <button id="clearTripwireButton" class="btn-secondary">Clear Line</button>
+        </div>
+        <p id="tripwireStatus" style="text-align:center;margin-top:12px;"></p>
+        <p style="text-align:center;margin-top:16px;"><a href="{{ url_for('dashboard') }}" style="color:var(--accent-light);">← Back to Dashboard</a></p>
     </div>
     {% endblock %}
     

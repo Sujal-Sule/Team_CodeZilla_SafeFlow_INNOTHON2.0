@@ -1,98 +1,122 @@
 {% extends "base.html" %}
-
-{% block title %}SafeFlow - Live Map{% endblock %}
+{% block title %}SafeFlow - Smart City Map{% endblock %}
+{% block page_heading %}Smart City Map{% endblock %}
+{% block page_sub %}Active cameras and critical safety zones. Click markers for details.{% endblock %}
 
 {% block head_extra %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
 <style>
-    #map {
-        height: 650px; /* Increased height a bit */
-        width: 100%;
-        border-radius: 6px; /* Match card styling */
-        border: 1px solid #dee2e6;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.06);
-    }
-    .map-container-wrapper { /* For better centering/padding if needed */
-        padding: 10px 0;
-    }
-    .legend {
-        background: white;
-        padding: 12px 18px; /* More padding */
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.06);
-        margin-top: 20px;
-        max-width: 300px; /* Control legend width */
-    }
-    .legend h4 {
-        margin-top: 0;
-        margin-bottom: 10px;
-        font-size: 1.1em;
-        color: #333;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 5px;
-    }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        margin-bottom: 8px; /* Increased spacing */
-        font-size: 0.9em;
-    }
-    .legend-color {
-        width: 20px;
-        height: 20px;
-        margin-right: 10px;
-        border: 1px solid #555; /* Darker border for visibility */
-        border-radius: 4px; /* Rounded square */
-    }
-    #alternatePaths { /* If you implement this feature */
-        margin-top: 20px;
-        padding: 15px;
-        background-color: #f8f9fa;
-        border-radius: 6px;
-    }
-    #alternatePaths h4 {
-        margin-top: 0;
-    }
+    .map-layout{display:grid;grid-template-columns:1fr 300px;gap:20px;}
+    .map-col-right{display:flex;flex-direction:column;gap:16px;}
+    #map{height:calc(100vh - 300px);min-height:450px;width:100%;border-radius:var(--radius);border:1px solid var(--border);overflow:hidden;}
+    .mapboxgl-popup-content{background:var(--bg-card)!important;color:var(--text)!important;border-radius:var(--radius-sm)!important;padding:14px!important;border:1px solid var(--border)!important;box-shadow:0 8px 30px rgba(0,0,0,0.4)!important;font-family:'Inter',sans-serif!important;font-size:13px!important;}
+    .mapboxgl-popup-tip{border-top-color:var(--bg-card)!important;}
+    .mapboxgl-popup-close-button{color:var(--text2)!important;font-size:18px!important;padding:4px 8px!important;}
+    .mapboxgl-ctrl-group{background:var(--bg-card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;}
+    .mapboxgl-ctrl-group button{background:transparent!important;border-color:var(--border)!important;}
+    .mapboxgl-ctrl-group button span{filter:invert(0.8);}
+    .map-style-toggle{position:absolute;bottom:16px;right:16px;z-index:5;display:flex;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border);}
+    .map-style-toggle button{padding:6px 16px;font-size:0.8em;font-weight:500;background:var(--bg-card);color:var(--text2);border:none;cursor:pointer;font-family:inherit;transition:var(--transition);}
+    .map-style-toggle button.active{background:var(--accent);color:#fff;}
+    .selected-cam-preview{width:100%;height:120px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);background:#000;}
+    .cam-detail-rows{display:flex;flex-direction:column;gap:6px;margin-top:12px;}
+    .cam-detail-row{display:flex;justify-content:space-between;font-size:0.85em;color:var(--text2);padding:5px 0;border-bottom:1px solid var(--border);}
+    .cam-detail-row:last-child{border-bottom:none;}
+    .cam-detail-val{font-weight:600;color:var(--accent2);}
+    .cam-detail-val.online{color:var(--green);}
+    .cam-detail-val.alert{color:var(--red);}
+    .qa-list{display:flex;flex-direction:column;gap:6px;}
+    .qa-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg-glass);border:1px solid var(--border);font-size:0.85em;color:var(--text2);cursor:pointer;text-decoration:none;transition:var(--transition);}
+    .qa-item:hover{background:var(--bg-hover);color:var(--text);}
+    .qa-icon{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .bottom-bar{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px;align-items:flex-start;}
+    .route-note{display:flex;align-items:center;gap:6px;font-size:0.8em;color:var(--text3);margin-top:10px;}
+    @media(max-width:1100px){.map-layout{grid-template-columns:1fr;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>Smart City Map View</h2>
-    <p>Displays active cameras and critical safety zones. Click on markers for more details.</p>
+<div class="stats-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:20px;">
+    <div class="stat-card"><div class="stat-icon si-blue"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></div><div><div class="stat-label">Active Cameras</div><div class="stat-value" id="mapStatCameras">0</div><div class="stat-sub green">● Online</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-red"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div><div><div class="stat-label">Overcrowded Zones</div><div class="stat-value" id="mapStatOvercrowded">0</div><div class="stat-sub red" id="mapStatOvercrowdedSub">--</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-green"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><div><div class="stat-label">Safe Zones</div><div class="stat-value" id="mapStatSafe">0</div><div class="stat-sub green">● All Clear</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-orange"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div><div class="stat-label">Incidents Today</div><div class="stat-value" id="mapStatIncidents">0</div><div class="stat-sub red">● View Details</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-purple"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><div><div class="stat-label">Last Updated</div><div class="stat-value" id="mapStatTime" style="font-size:1.2em;">--</div><div class="stat-sub muted" id="mapStatTimeSub">--</div></div></div>
+</div>
 
-    <div class="map-container-wrapper">
+<div class="map-layout">
+    <div style="position:relative;">
         <div id="map"></div>
+        <div class="map-style-toggle">
+            <button class="active" onclick="setMapStyle('dark')">Map</button>
+            <button onclick="setMapStyle('satellite')">Satellite</button>
+        </div>
     </div>
+    <div class="map-col-right">
+        <div class="card" id="selectedCameraCard">
+            <div class="card-head"><div class="card-title"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2m-9-11h2m18 0h2"/></svg> Selected Camera</div></div>
+            <span class="live-badge" id="camLiveBadge" style="display:none;">● Live</span>
+            <div id="camPreviewArea">
+                <div class="empty-state" style="padding:20px 0;" id="noCamSelected">
+                    <svg width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" opacity="0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+                    <p class="empty-title" style="font-size:0.85em;">No camera selected</p>
+                    <p class="empty-sub">Click a camera on the map</p>
+                </div>
+                <div id="camDetailsArea" style="display:none;">
+                    <img id="camFeedPreview" class="selected-cam-preview" src="" alt="Camera Feed">
+                    <h4 style="font-size:0.95em;margin-top:10px;" id="camDetailName">--</h4>
+                    <p style="font-size:0.78em;color:var(--text3);margin-top:2px;" id="camDetailLocation">--</p>
+                    <div class="cam-detail-rows">
+                        <div class="cam-detail-row"><span>Status</span><span class="cam-detail-val online" id="camDetailStatus">--</span></div>
+                        <div class="cam-detail-row"><span>Area Type</span><span class="cam-detail-val" id="camDetailMode">--</span></div>
+                        <div class="cam-detail-row"><span>Current Density</span><span class="cam-detail-val" id="camDetailDensity">--</span></div>
+                        <div class="cam-detail-row"><span>Last Updated</span><span class="cam-detail-val" id="camDetailUpdated">--</span></div>
+                    </div>
+                    <a id="camDetailLink" href="#" class="btn-accent" style="display:block;text-align:center;margin-top:12px;text-decoration:none;font-size:0.85em;">View Camera Details →</a>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <h3 class="card-title-simple">Quick Actions</h3>
+            <div class="qa-list">
+                <a href="/history" class="qa-item"><div class="qa-icon" style="background:rgba(239,68,68,0.1);color:#f87171;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>View Alerts</a>
+                <a href="/dashboard" class="qa-item"><div class="qa-icon" style="background:rgba(59,130,246,0.1);color:#60a5fa;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></div>All Cameras</a>
+                <a href="/history" class="qa-item"><div class="qa-icon" style="background:rgba(168,85,247,0.1);color:#c084fc;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>Generate Report</a>
+                <a href="#" class="qa-item" id="qaFindRoute" onclick="document.getElementById('routeSection').scrollIntoView({behavior:'smooth'});return false;"><div class="qa-icon" style="background:rgba(34,197,94,0.1);color:#4ade80;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></div>Find Route</a>
+            </div>
+        </div>
+    </div>
+</div>
 
-    
-
-    <div class="legend">
-        <h4>Legend</h4>
-        <div class="legend-item"><span class="legend-color" style="background-color: blue; opacity: 0.7;"></span> Active Camera Zone</div>
-        <div class="legend-item"><span class="legend-color" style="background-color: red; opacity: 0.7;"></span> Overcrowded Zone</div>
-        <div class="legend-item"><span class="legend-color" style="background-color: orange; opacity: 0.7;"></span> Lockdown Zone</div>
-        <div class="legend-item"><span class="legend-color" style="background-color: black; opacity: 0.7;"></span> Conflict/Damaged</div>
-        <div class="legend-item"><span class="legend-color" style="background-color: green; opacity: 0.7;"></span> Safe Zone</div>
+<div class="bottom-bar" id="routeSection">
+    <div class="legend card" style="min-width:200px;">
+        <h4 style="font-size:0.9em;margin-bottom:10px;">Legend</h4>
+        <div class="legend-item"><span class="legend-color" style="background:#3b82f6;"></span> Active Camera</div>
+        <div class="legend-item"><span class="legend-color" style="background:#ef4444;"></span> Overcrowded</div>
+        <div class="legend-item"><span class="legend-color" style="background:#f59e0b;"></span> Lockdown Zone</div>
+        <div class="legend-item"><span class="legend-color" style="background:#374151;"></span> Conflict/Damaged</div>
+        <div class="legend-item"><span class="legend-color" style="background:#22c55e;"></span> Safe Zone</div>
     </div>
-
-    <div id="alternatePaths" style="display:none;"> {# Initially hidden, JS can show if paths are generated #}
-        <h4>Guidance & Alternate Paths</h4>
-        <p>Visual cues for rerouting will appear here if defined.</p>
-        <ul id="pathInstructions"></ul>
+    <div class="card" style="flex:1;min-width:300px;">
+        <h4 style="font-size:0.9em;margin-bottom:12px;">Find Route</h4>
+        <div class="filters-row">
+            <div class="filter-group"><label>Start Point</label><select id="routeStartSelect"><option value="">Select start location</option></select></div>
+            <div class="filter-group"><label>End Point</label><select id="routeEndSelect"><option value="">Select end location</option></select></div>
+            <div class="filter-actions"><button id="findRouteButton" class="btn-sm btn-primary">Find Route</button></div>
+        </div>
+        <div class="route-note"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/></svg> Route will avoid overcrowded and high-risk zones</div>
     </div>
-    <div class="routing-controls card" style="margin-top: 20px;">
-        <h4>Find Route</h4>
-        <label for="routeStartSelect">Start:</label>
-        <select id="routeStartSelect"><option value="">-- Select Start --</option></select>
-        <label for="routeEndSelect">End:</label>
-        <select id="routeEndSelect"><option value="">-- Select End --</option></select>
-        <button id="findRouteButton">Find Fastest Route</button>
-    </div>
+</div>
+<div id="alternatePaths" style="display:none;margin-top:14px;" class="card">
+    <h4 style="font-size:0.9em;margin-bottom:8px;">Route Information</h4>
+    <ul id="pathInstructions" style="list-style:none;padding:0;"></ul>
 </div>
 {% endblock %}
 
 {% block scripts %}
-{# Leaflet JS is already in base.html, so no need to add it again here #}
+<script>
+    const MAPBOX_TOKEN = "{{ mapbox_token }}";
+</script>
 <script src="{{ url_for('static', path='/js/map.js') }}"></script>
 {% endblock %}

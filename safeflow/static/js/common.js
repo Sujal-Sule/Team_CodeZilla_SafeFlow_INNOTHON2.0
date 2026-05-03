@@ -74,9 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
                 .then(user => {
                     if (user) {
-                        userEmailDisplay.textContent = `Logged in as: ${user.email} (${user.role})`;
+                        userEmailDisplay.textContent = user.email;
                         localStorage.setItem('userRole', user.role);
                         localStorage.setItem('userEmail', user.email);
+                        const nameEl = document.getElementById('sidebarUserName');
+                        if(nameEl) nameEl.textContent = user.role === 'admin' ? 'Admin User' : 'User';
+                        const avatarEl = document.getElementById('userAvatarInit');
+                        if(avatarEl) avatarEl.textContent = user.email.charAt(0).toUpperCase();
                     }
                 })
                 .catch(error => {
@@ -88,7 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
         } else {
             // If email/role already in localStorage, use them
-            userEmailDisplay.textContent = `Logged in as: ${localStorage.getItem('userEmail')} (${localStorage.getItem('userRole')})`;
+            userEmailDisplay.textContent = localStorage.getItem('userEmail') || '';
+            const nameEl2 = document.getElementById('sidebarUserName');
+            if(nameEl2) nameEl2.textContent = localStorage.getItem('userRole') === 'admin' ? 'Admin User' : 'User';
         }
     } else if (userEmailDisplay && (window.location.pathname === '/login' || window.location.pathname === '/')) {
         userEmailDisplay.textContent = ''; // Clear on login page

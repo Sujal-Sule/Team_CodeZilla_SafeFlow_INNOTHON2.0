@@ -380,8 +380,75 @@ async function initializeDashboard(loggedInUser) {
     // Initial calls within initializeDashboard
     await loadCamerasForMultiSelect();
     setupAdminSpecificUI();
-    updateToolButtonVisibility(); // Set initial state based on no focused camera
-    fetchAndDisplayFocusedCameraData(); // Will show N/A initially
+    updateToolButtonVisibility();
+    fetchAndDisplayFocusedCameraData();
+
+    // Populate stats cards
+    try {
+        const statsRes = await fetchWithAuth(`${API_BASE_URL}/cameras/`);
+        if(statsRes.ok){
+            const cams = await statsRes.json();
+            const el = id => document.getElementById(id);
+            if(el('statTotalCameras')) el('statTotalCameras').textContent = cams.length;
+        }
+    } catch(e){}
+
+    // Populate Recent Activity from logs
+    try {
+        const logsRes = await fetchWithAuth(`${API_BASE_URL}/logs/?limit=8`);
+        if (logsRes.ok) {
+            const logs = await logsRes.json();
+            const actList = document.getElementById('recentActivityList');
+            const actEmpty = document.getElementById('recentActivityEmpty');
+            if (actList && logs.length > 0) {
+                actEmpty.style.display = 'none';
+                actList.style.display = 'flex';
+                actList.innerHTML = '';
+                logs.forEach(log => {
+                    const ts = new Date(log.timestamp);
+                    const now = new Date();
+                    const diffMs = now - ts;
+                    const diffMin = Math.floor(diffMs / 60000);
+                    let timeStr;
+                    if (diffMin < 1) timeStr = 'Just now';
+                    else if (diffMin < 60) timeStr = `${diffMin}m ago`;
+                    else if (diffMin < 1440) timeStr = `${Math.floor(diffMin / 60)}h ago`;
+                    else timeStr = `${Math.floor(diffMin / 1440)}d ago`;
+
+                    const mode = log.mode || 'general';
+                    const isAlert = log.person_count > 10;
+                    let iconClass = 'ai-blue';
+                    let iconSvg = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>';
+                    if (isAlert) {
+                        iconClass = 'ai-red';
+                        iconSvg = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+                    } else if (mode === 'tripwire') {
+                        iconClass = 'ai-purple';
+                        iconSvg = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+                    }
+
+                    let detail = '';
+                    if (mode === 'tripwire') {
+                        detail = `Entry: ${log.entry_count ?? 0} · Exit: ${log.exit_count ?? 0}`;
+                    } else {
+                        detail = `Persons: ${log.person_count ?? 0} · Density: ${log.density != null ? log.density.toFixed(2) : '--'} p/m²`;
+                    }
+
+                    const item = document.createElement('div');
+                    item.className = 'activity-item';
+                    item.innerHTML = `
+                        <div class="activity-icon ${iconClass}">${iconSvg}</div>
+                        <div class="activity-body">
+                            <div class="activity-title">${log.area_name} — ${mode.charAt(0).toUpperCase() + mode.slice(1)}</div>
+                            <div class="activity-detail">${detail}</div>
+                        </div>
+                        <div class="activity-time">${timeStr}</div>`;
+                    actList.appendChild(item);
+                });
+            }
+        }
+    } catch(e) { console.warn("Recent activity fetch error:", e); }
+
     console.log("--- EXITING initializeDashboard ---");
 
 } // End of initializeDashboard
@@ -404,8 +471,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const userEmailDisplay = document.getElementById('userEmailDisplay');
         if (userEmailDisplay) {
-            userEmailDisplay.textContent = `Logged in as: ${user.email} (${user.role})`;
+            userEmailDisplay.textContent = user.email;
         }
+        const nameDisplay = document.getElementById('sidebarUserName');
+        if (nameDisplay) nameDisplay.textContent = user.role === 'admin' ? 'Admin User' : 'User';
+        const avatarEl = document.getElementById('userAvatarInit');
+        if (avatarEl) avatarEl.textContent = user.email.charAt(0).toUpperCase();
         localStorage.setItem('userRole', user.role);
         localStorage.setItem('userEmail', user.email);
 

@@ -1,151 +1,119 @@
 {% extends "base.html" %}
-
 {% block title %}SafeFlow - Dashboard{% endblock %}
+{% block page_heading %}Live Dashboard{% endblock %}
+{% block page_sub %}Real-time crowd monitoring and camera management{% endblock %}
+{% block topbar_center %}<div id="alertDisplay" class="alert-bar alert-normal">System Status: All Systems Operational</div>{% endblock %}
 
 {% block content %}
-<div class="container dashboard-container">
-    <h2>Live Dashboard</h2>
-    <div id="alertDisplay" class="alert-bar alert-normal">No active alerts.</div>
+<div class="stats-row">
+    <div class="stat-card"><div class="stat-icon si-blue"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></div><div><div class="stat-label">Total Cameras</div><div class="stat-value" id="statTotalCameras">0</div><div class="stat-sub green">● Active</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-red"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div><div class="stat-label">Active Alerts</div><div class="stat-value" id="statActiveAlerts">0</div><div class="stat-sub green">● No active alerts</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-purple"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div><div><div class="stat-label">Crowd Density</div><div class="stat-value" id="statCrowdDensity">--</div><div class="stat-sub muted">● N/A</div></div></div>
+    <div class="stat-card"><div class="stat-icon si-green"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div><div><div class="stat-label">System Health</div><div class="stat-value" id="statHealth">100%</div><div class="stat-sub green">● Excellent</div></div></div>
+</div>
 
-    <div class="dashboard-main-layout">
-        {# Left Column: Stream Grid and Controls #}
-        <div class="dashboard-stream-column">
-            <div class="video-feed-grid-container card">
-                <h3>Live Feeds</h3>
-                <div id="videoFeedGrid" class="video-grid">
-                    {# Img tags for video streams will be added here by JavaScript #}
-                </div>
-                <p id="streamStatus" style="text-align: center; margin-top: 10px;">Select cameras to add to the grid.</p>
-                <div class="stream-controls">
-                    <label for="multiCameraSelect">Add Camera to Grid:</label>
-                    <select id="multiCameraSelect">
-                        <option value="">-- Select Camera --</option>
-                        {# Options populated by JS #}
-                    </select>
-                    <button id="addStreamToGridButton">Add to Grid</button>
-                    <button id="clearGridButton">Clear All Feeds</button>
-                </div>
+<div class="dash-grid">
+    <div class="dash-left">
+        <div class="card">
+            <div class="card-head"><div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg> Live Camera Feeds</div><span class="card-subtitle">Real-time monitoring</span></div>
+            <button class="card-action-btn" onclick="var c=document.getElementById('gridControls');c.style.display=c.style.display==='flex'?'none':'flex'"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Manage Grid</button>
+            <div id="gridControls" class="grid-controls" style="display:none;">
+                <select id="multiCameraSelect"><option value="">-- Select Camera --</option></select>
+                <button id="addStreamToGridButton" class="btn-sm btn-primary">Add to Grid</button>
+                <button id="clearGridButton" class="btn-sm btn-secondary">Clear All</button>
             </div>
+            <div id="videoFeedGrid" class="video-grid"></div>
+            <div id="streamEmptyState" class="empty-state">
+                <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" opacity="0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+                <p class="empty-title">No cameras selected</p>
+                <p class="empty-sub">Add cameras to the grid to start monitoring</p>
+                <button class="btn-accent" onclick="openModal('addCameraModal')">+ Add Camera</button>
+            </div>
+            <p id="streamStatus" style="display:none;"></p>
         </div>
-
-        {# Right Column: Live Data, Tools, and File Upload #}
-        <div class="dashboard-info-column">
-            <div class="live-data card">
-                <h3>Real-time Data (Focused Camera)</h3>
-                <p><em>Data below is for the last camera added or a specifically selected stream (feature TBD).</em></p>
-                <p>Camera: <span id="liveCameraName">N/A</span></p>
-                <p>Area: <span id="liveAreaName">N/A</span></p>
-                <p>Mode: <span id="liveMode">N/A</span></p>
-                <div id="generalModeData" style="display:none;">
-                    <p>Person Count: <span id="livePersonCount">0</span></p>
-                    <p>Crowd Density: <span id="liveCrowdDensity">0.00</span> p/m²</p>
-                </div>
-                <div id="tripwireModeData" style="display:none;">
-                    <p>Entries: <span id="liveEntryCount">0</span></p>
-                    <p>Exits: <span id="liveExitCount">0</span></p>
-                    <p>Current Occupancy: <span id="liveOccupancy">0</span></p>
-                </div>
+        <div class="card">
+            <div class="card-head"><div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> Recent Activity</div><span class="card-subtitle">Latest system events and activities</span></div>
+            <a href="/history" class="card-action-btn">View All History</a>
+            <div id="recentActivityList" class="activity-feed" style="display:none;max-height:280px;overflow-y:auto;"></div>
+            <div id="recentActivityEmpty" class="empty-state">
+                <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" opacity="0.3"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <p class="empty-title">No recent activity</p>
+                <p class="empty-sub">System activities will appear here</p>
             </div>
-
-            <div class="dashboard-tools card">
-                <h3>Tools</h3>
-                <button id="addCameraButton" class="hidden-button">Add Camera</button> {# JS makes visible for all #}
-                <button id="addUpdateUserButton" class="hidden-button">Manage Users</button> {# JS for admin #}
-                <button id="manageZonesButton" class="hidden">Manage Zones</button> {# JS for admin #}
-                <button id="setupTripwireButton" class="hidden">Setup Tripwire</button> {# JS based on selection & admin #}
-                <button id="deleteCameraButton" class="delete-camera-button">Delete Focused Camera</button> {# JS based on selection & admin #}
-            </div>
-
-            <div class="video-file-upload card">
-                <h3>Process Video File</h3>
-                <input type="file" id="videoFileUpload" accept="video/*">
-                <button id="processVideoButton">Process File</button>
-                <div id="fileProcessingStatus" style="margin-top: 5px;"></div>
-                <div id="fileProcessingResults" style="margin-top: 10px; font-size: 0.9em;">
-                    <p>Max Persons: <span id="fileMaxPersons">N/A</span></p>
-                    <p>Avg Density: <span id="fileAvgDensity">N/A</span></p>
-                </div>
-            </div>
-        </div>
-    </div> {# End of dashboard-main-layout #}
-
-
-    {# MODALS - Placed outside the main layout columns for proper overlay #}
-    <div id="addCameraModal" class="modal">
-        <div class="modal-content">
-            <span class="close-button" onclick="closeModal('addCameraModal')">×</span>
-            <h4>Add New Camera</h4>
-            <form id="addCameraForm">
-                <label for="camName">Name:</label> <input type="text" id="camName" required><br>
-                <label for="camArea">Area Name:</label> <input type="text" id="camArea" required><br>
-                <label for="camSource">Source (e.g., 0, IP):</label> <input type="text" id="camSource" value="0" required><br>
-                <label for="camMode">Mode:</label>
-                <select id="camMode">
-                    <option value="general">General</option>
-                    <option value="tripwire">Tripwire</option>
-                </select><br>
-                <label for="camCrowdThreshold">Crowd Threshold:</label> <input type="number" id="camCrowdThreshold" value="10"><br>
-                <label for="camAreaSqMeters">Area (m²):</label> <input type="number" step="0.1" id="camAreaSqMeters" value="20"><br>
-                <label for="camOccupancyThreshold">Occupancy Threshold:</label> <input type="number" id="camOccupancyThreshold" value="5"><br>
-                <label for="camLat">Latitude (Optional):</label> <input type="number" step="any" id="camLat" placeholder="e.g., 22.7196"><br>
-                <label for="camLon">Longitude (Optional):</label> <input type="number" step="any" id="camLon" placeholder="e.g., 22.7196"><br>
-                <button type="submit">Add Camera</button>
-            </form>
         </div>
     </div>
-
-    <div id="manageUserModal" class="modal">
-         <div class="modal-content">
-            <span class="close-button" onclick="closeModal('manageUserModal')">×</span>
-            <h4>Manage Users</h4>
-            <form id="addUserForm">
-                <h5>Add User</h5>
-                <label for="userEmail">Email:</label> <input type="email" id="userEmail" required><br>
-                <label for="userPassword">Password:</label> <input type="password" id="userPassword" required><br>
-                <label for="userRole">Role:</label>
-                <select id="userRole">
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                </select><br>
-                <button type="submit">Add User</button>
-            </form>
-            <hr>
-            <h5>Existing Users</h5>
-            <ul id="userList"></ul>
+    <div class="dash-right">
+        <div class="card">
+            <div class="card-head"><div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2m-9-11h2m18 0h2m-4.2-5.8l-1.4 1.4M6.6 17.4l-1.4 1.4m0-12.8l1.4 1.4m10.8 10.8l1.4 1.4"/></svg> Focused Camera</div></div>
+            <span class="live-badge">● Live</span>
+            <div id="focusedCamEmpty" class="empty-state" style="padding:20px 0;">
+                <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" opacity="0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+                <p class="empty-title" style="font-size:0.88em;">No camera selected</p>
+                <p class="empty-sub">Select a camera to view details</p>
+            </div>
+            <div class="focused-data">
+                <div class="data-row"><span>Camera:</span><span id="liveCameraName" class="data-val">N/A</span></div>
+                <div class="data-row"><span>Area:</span><span id="liveAreaName" class="data-val">N/A</span></div>
+                <div class="data-row"><span>Mode:</span><span id="liveMode" class="data-val">N/A</span></div>
+            </div>
+            <div id="generalModeData" style="display:none;">
+                <div class="data-row"><span>Person Count:</span><span id="livePersonCount" class="data-val">0</span></div>
+                <div class="data-row"><span>Crowd Density:</span><span id="liveCrowdDensity" class="data-val">0.00</span> p/m²</div>
+            </div>
+            <div id="tripwireModeData" style="display:none;">
+                <div class="data-row"><span>Entries:</span><span id="liveEntryCount" class="data-val">0</span></div>
+                <div class="data-row"><span>Exits:</span><span id="liveExitCount" class="data-val">0</span></div>
+                <div class="data-row"><span>Occupancy:</span><span id="liveOccupancy" class="data-val">0</span></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3 class="card-title-simple">Quick Tools</h3>
+            <div class="quick-tools">
+                <button id="addCameraButton" class="qt-btn qt-blue" style="display:none;" onclick="openModal('addCameraModal')"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg> Add Camera</button>
+                <a href="/map" class="qt-btn qt-green"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg> View Map</a>
+                <button class="qt-btn qt-purple" onclick="document.getElementById('processSection').scrollIntoView({behavior:'smooth'})"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> Process Video</button>
+                <button id="addUpdateUserButton" class="qt-btn" style="display:none;">Manage Users</button>
+                <button id="manageZonesButton" class="qt-btn" style="display:none;">Manage Zones</button>
+                <button id="setupTripwireButton" style="display:none;">Setup Tripwire</button>
+                <button id="deleteCameraButton" class="qt-btn qt-red" style="display:none;">Delete Camera</button>
+            </div>
+        </div>
+        <div class="card" id="processSection">
+            <div class="card-head"><div class="card-title"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg> Process Video File</div></div>
+            <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:14px;">Upload and process video files for analysis</p>
+            <div class="file-drop" onclick="document.getElementById('videoFileUpload').click()">
+                <svg width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" opacity="0.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <p style="margin:8px 0 2px;font-size:0.88em;color:var(--text-secondary);">Drop file here or click to browse</p>
+                <p style="font-size:0.78em;color:var(--text-muted);">Supports: MP4, AVI, MOV (Max 500MB)</p>
+                <input type="file" id="videoFileUpload" accept="video/*" style="display:none;">
+            </div>
+            <button id="processVideoButton" class="btn-sm btn-primary" style="width:100%;margin-top:10px;">Process Video</button>
+            <div id="fileProcessingStatus" style="margin-top:8px;font-size:0.85em;"></div>
+            <div style="margin-top:10px;font-size:0.88em;">
+                <div class="data-row"><span>Max Persons:</span><span id="fileMaxPersons" class="data-val">N/A</span></div>
+                <div class="data-row"><span>Avg Density:</span><span id="fileAvgDensity" class="data-val">N/A</span></div>
+            </div>
         </div>
     </div>
+</div>
 
-    <div id="manageZoneModal" class="modal">
-         <div class="modal-content">
-            <span class="close-button" onclick="closeModal('manageZoneModal')">×</span>
-            <h4>Manage Zones</h4>
-            <form id="addZoneForm">
-                <h5>Add/Update Zone</h5>
-                <input type="hidden" id="zoneId">
-                <label for="zoneName">Name:</label> <input type="text" id="zoneName" required><br>
-                <label for="zoneType">Type:</label>
-                <select id="zoneType">
-                    <option value="overcrowded">Overcrowded</option>
-                    <option value="lockdown">Lockdown</option>
-                    <option value="conflict">Conflict/Damaged</option>
-                    <option value="safe">Safe Zone</option>
-                    <option value="camera_active">Active Camera</option>
-                </select><br>
-                <label for="zoneLat">Latitude:</label> <input type="number" step="any" id="zoneLat" required><br>
-                <label for="zoneLon">Longitude:</label> <input type="number" step="any" id="zoneLon" required><br>
-                <label for="zoneRadius">Radius (m):</label> <input type="number" step="any" id="zoneRadius"><br>
-                <label for="zoneDesc">Description:</label> <textarea id="zoneDesc"></textarea><br>
-                <button type="submit">Save Zone</button>
-            </form>
-            <hr>
-            <h5>Existing Zones</h5>
-            <ul id="zoneList"></ul>
-        </div>
-    </div>
-
-</div> {# End of .container .dashboard-container #}
+<div id="addCameraModal" class="modal"><div class="modal-content"><span class="close-button" onclick="closeModal('addCameraModal')">&times;</span><h4>Add New Camera</h4><form id="addCameraForm"><label for="camName">Name</label><input type="text" id="camName" required><label for="camArea">Area Name</label><input type="text" id="camArea" required><label for="camSource">Source (0, IP)</label><input type="text" id="camSource" value="0" required><label for="camMode">Mode</label><select id="camMode"><option value="general">General</option><option value="tripwire">Tripwire</option></select><label for="camCrowdThreshold">Crowd Threshold</label><input type="number" id="camCrowdThreshold" value="10"><label for="camAreaSqMeters">Area (m²)</label><input type="number" step="0.1" id="camAreaSqMeters" value="20"><label for="camOccupancyThreshold">Occupancy Threshold</label><input type="number" id="camOccupancyThreshold" value="5"><label for="camLat">Latitude</label><input type="number" step="any" id="camLat" placeholder="22.7196"><label for="camLon">Longitude</label><input type="number" step="any" id="camLon" placeholder="75.8577"><button type="submit">Add Camera</button></form></div></div>
+<div id="manageUserModal" class="modal"><div class="modal-content"><span class="close-button" onclick="closeModal('manageUserModal')">&times;</span><h4>Manage Users</h4><form id="addUserForm"><h5>Add User</h5><label for="userEmail">Email</label><input type="email" id="userEmail" required><label for="userPassword">Password</label><input type="password" id="userPassword" required><label for="userRole">Role</label><select id="userRole"><option value="user">User</option><option value="admin">Admin</option></select><button type="submit">Add User</button></form><hr><h5>Existing Users</h5><ul id="userList"></ul></div></div>
+<div id="manageZoneModal" class="modal"><div class="modal-content"><span class="close-button" onclick="closeModal('manageZoneModal')">&times;</span><h4>Manage Zones</h4><form id="addZoneForm"><h5>Add/Update Zone</h5><input type="hidden" id="zoneId"><label for="zoneName">Name</label><input type="text" id="zoneName" required><label for="zoneType">Type</label><select id="zoneType"><option value="overcrowded">Overcrowded</option><option value="lockdown">Lockdown</option><option value="conflict">Conflict/Damaged</option><option value="safe">Safe Zone</option><option value="camera_active">Active Camera</option></select><label for="zoneLat">Latitude</label><input type="number" step="any" id="zoneLat" required><label for="zoneLon">Longitude</label><input type="number" step="any" id="zoneLon" required><label for="zoneRadius">Radius (m)</label><input type="number" step="any" id="zoneRadius"><label for="zoneDesc">Description</label><textarea id="zoneDesc"></textarea><button type="submit">Save Zone</button></form><hr><h5>Existing Zones</h5><ul id="zoneList"></ul></div></div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', path='/js/dashboard.js') }}"></script>
+<script>
+(function(){
+    const grid = document.getElementById('videoFeedGrid');
+    const empty = document.getElementById('streamEmptyState');
+    if(grid && empty){
+        const obs = new MutationObserver(()=>{
+            empty.style.display = grid.children.length > 0 ? 'none' : 'flex';
+        });
+        obs.observe(grid, {childList:true});
+    }
+})();
+</script>
 {% endblock %}

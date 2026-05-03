@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     DEFAULT_AREA_SQ_METERS: float = float(os.getenv("DEFAULT_AREA_SQ_METERS", 20.0))
     DEFAULT_CAMERA_ID: int = int(os.getenv("DEFAULT_CAMERA_ID", 0))
 
+    MAPBOX_ACCESS_TOKEN: str = os.getenv("MAPBOX_ACCESS_TOKEN", "")
+
 
     class Config:
         case_sensitive = True

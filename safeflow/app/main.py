@@ -71,23 +71,22 @@ async def on_startup():
 # --- HTML Pages ---
 @app.get("/", response_class=HTMLResponse, name="root")
 async def serve_login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="login.html")
 
 @app.get("/login", response_class=HTMLResponse, name="login")
 async def login_page_explicit(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="login.html")
 
 # Common helper for protected templates
 async def get_page_with_auth(request: Request, template_name: str, user: user_schema.User = Depends(get_current_user)):
     if not user:
         return RedirectResponse(url=app.url_path_for("login"), status_code=302)
-    return templates.TemplateResponse(template_name, {"request": request, "user": user})
+    return templates.TemplateResponse(request=request, name=template_name, context={"user": user})
 
 @app.get("/dashboard", response_class=HTMLResponse, name="dashboard")
 async def dashboard_page(request: Request):
     # JS will authenticate user & fetch data after page load
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={
         "user": None,       # Placeholder
         "cameras": []       # Placeholder - JS will fill this
     })
@@ -107,8 +106,7 @@ async def tripwire_setup_page(
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found for tripwire setup")
 
-    return templates.TemplateResponse("tripwire_setup.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="tripwire_setup.html", context={
         "user": current_user,
         "camera": camera
     })
@@ -117,18 +115,16 @@ async def tripwire_setup_page(
 async def history_page(request: Request):
    
 
-    return templates.TemplateResponse("history.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="history.html", context={
         "user": None,        # JS will handle user display/info
         "area_names": []     # JS will populate filters if needed
     })
 @app.get("/map", response_class=HTMLResponse, name="map_view")
 async def map_page(request: Request):
-    # User authentication and data fetching will be handled by map.js
-    return templates.TemplateResponse("map.html", {"request": request, "user": None})
-    return templates.TemplateResponse("map.html", {
-        "request": request,
-        "user": current_user
+    from app.core.config import settings
+    return templates.TemplateResponse(request=request, name="map.html", context={
+        "user": None,
+        "mapbox_token": settings.MAPBOX_ACCESS_TOKEN
     })
 
 # --- Entry Point for Local Dev ---

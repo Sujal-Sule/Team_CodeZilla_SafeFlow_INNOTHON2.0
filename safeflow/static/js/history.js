@@ -104,8 +104,8 @@ async function initializeHistoryPage(loggedInUser) {
 
         if (!chartFormattedData || !chartFormattedData.labels || chartFormattedData.labels.length === 0) {
             console.log("--- updateChart: No data to display in chart or data format incorrect.");
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "#888"; // Darker grey for message
+            ctx.font = "15px Inter, Arial";
+            ctx.fillStyle = "#6b7280";
             ctx.textAlign = "center";
             ctx.fillText("No data available for chart with current filters.", chartCanvas.width / 2, chartCanvas.height / 2);
             return;
@@ -119,12 +119,15 @@ async function initializeHistoryPage(loggedInUser) {
                 datasets: [{
                     label: `Person Count: ${chartFormattedData.areaName || 'Selected Area'}`,
                     data: chartFormattedData.personCounts,
-                    borderColor: 'rgb(54, 162, 235)', // Blue
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    tension: 0.2, // Smoother line
+                    borderColor: '#818cf8',
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    tension: 0.35,
                     fill: true,
-                    pointRadius: 3, // Smaller points
-                    pointHoverRadius: 5
+                    pointRadius: 3,
+                    pointBackgroundColor: '#818cf8',
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#a5b4fc',
+                    borderWidth: 2
                 }]
             },
             options: {
@@ -132,25 +135,33 @@ async function initializeHistoryPage(loggedInUser) {
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        title: { display: true, text: 'Time', font: {size: 14} },
-                        ticks: { autoSkip: true, maxTicksLimit: 12, font: {size: 10} } // Adjust for readability
+                        title: { display: true, text: 'Time', font: {size: 13}, color: '#9ca3af' },
+                        ticks: { autoSkip: true, maxTicksLimit: 12, font: {size: 10}, color: '#6b7280' },
+                        grid: { color: 'rgba(255,255,255,0.04)' }
                     },
                     y: {
                         beginAtZero: true,
-                        title: { display: true, text: 'Person Count', font: {size: 14} },
-                        ticks: { font: {size: 10} }
+                        title: { display: true, text: 'Person Count', font: {size: 13}, color: '#9ca3af' },
+                        ticks: { font: {size: 10}, color: '#6b7280' },
+                        grid: { color: 'rgba(255,255,255,0.04)' }
                     }
                 },
                 plugins: {
-                    legend: { display: true, position: 'top' },
+                    legend: { display: true, position: 'top', labels: { color: '#9ca3af', font: { size: 12 } } },
                     title: {
                         display: true,
-                        text: `Crowd Trend for ${chartFormattedData.areaName || 'All Areas (Aggregated)'}`,
-                        font: { size: 16 }
+                        text: `Crowd Trend for ${chartFormattedData.areaName || 'All Areas'}`,
+                        font: { size: 15 },
+                        color: '#e8eaed'
                     },
                     tooltip: {
                         mode: 'index',
                         intersect: false,
+                        backgroundColor: 'rgba(22,25,34,0.95)',
+                        titleColor: '#e8eaed',
+                        bodyColor: '#9ca3af',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1
                     }
                 },
                 hover: {
@@ -198,11 +209,10 @@ async function initializeHistoryPage(loggedInUser) {
         }
 
         // Fetch data for the chart
-        if (area && chartCanvas) {
-            console.log(`--- fetchHistoryAndChartData: Fetching chart data for area: ${area}`);
-            // Fetch more data for chart, ensure it's sorted by timestamp ascending from backend if possible.
-            // Otherwise, sort on frontend. Max 500 points for performance for now.
-            let chartDataUrl = `${API_BASE_URL}/logs/?area_name=${encodeURIComponent(area)}&limit=500&order_by=timestamp&order_dir=asc`;
+        if (chartCanvas) {
+            console.log(`--- fetchHistoryAndChartData: Fetching chart data for area: ${area || 'All'}`);
+            let chartDataUrl = `${API_BASE_URL}/logs/?limit=500&order_by=timestamp&order_dir=asc`;
+            if (area) chartDataUrl += `&area_name=${encodeURIComponent(area)}`;
             if (startDate) chartDataUrl += `&start_date=${startDate}`;
             if (endDate) chartDataUrl += `&end_date=${endDate}`;
 
@@ -217,28 +227,22 @@ async function initializeHistoryPage(loggedInUser) {
                 let chartLogs = await chartResponse.json();
                 console.log("--- fetchHistoryAndChartData: Logs received for chart:", chartLogs.length);
 
-                // If backend doesn't sort, sort here (ensure your API supports order_by and order_dir)
-                // If API already sorts ascending, this isn't strictly needed but harmless.
                 chartLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 const chartFormattedData = {
                     labels: chartLogs.map(log => {
                         const date = new Date(log.timestamp);
-                        // Format: HH:MM (Mon DD)
                         return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')} (${date.toLocaleString('default', { month: 'short' })} ${date.getDate()})`;
                     }),
                     personCounts: chartLogs.map(log => log.person_count),
-                    areaName: area
+                    areaName: area || 'All Areas'
                 };
                 updateChart(chartFormattedData);
 
             } catch (error) {
                 console.error('--- fetchHistoryAndChartData: Error fetching/processing data for chart:', error);
-                updateChart(null); // Clear or show error on chart
+                updateChart(null);
             }
-        } else if (chartCanvas) {
-            console.log("--- fetchHistoryAndChartData: No area selected for chart, or canvas missing. Clearing chart.");
-            updateChart(null);
         }
     }
 
@@ -309,6 +313,12 @@ async function initializeHistoryPage(loggedInUser) {
     // Initial load
     console.log("--- initializeHistoryPage: Performing initial data load...");
     await populateAreaFilter();
-    await fetchHistoryAndChartData(); // Initial fetch for table, chart will be blank until area selected
+
+    // Auto-select first area if available so chart shows data immediately
+    if (areaFilter && areaFilter.options.length > 1) {
+        areaFilter.selectedIndex = 1;
+    }
+
+    await fetchHistoryAndChartData();
     console.log("--- initializeHistoryPage: Initial data load complete.");
 }

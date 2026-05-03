@@ -29,8 +29,17 @@ def create_log(db: Session, log: log_schema.DetectionLogCreate):
     db.refresh(db_log)
     return db_log
 
-def get_logs(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.DetectionLog).order_by(desc(models.DetectionLog.timestamp)).offset(skip).limit(limit).all()
+def get_logs(db: Session, skip: int = 0, limit: int = 100, order_by: str = None, order_dir: str = "desc"):
+    query = db.query(models.DetectionLog)
+    if order_by and hasattr(models.DetectionLog, order_by):
+        column_to_order = getattr(models.DetectionLog, order_by)
+        if order_dir == "asc":
+            query = query.order_by(asc(column_to_order))
+        else:
+            query = query.order_by(desc(column_to_order))
+    else:
+        query = query.order_by(desc(models.DetectionLog.timestamp))
+    return query.offset(skip).limit(limit).all()
 
 def get_logs_filtered(db: Session, area_name: str = None, start_date: datetime.date = None, end_date: datetime.date = None, order_by: str = None, order_dir: str = "desc", skip: int = 0, limit: int = 100):
     query = db.query(models.DetectionLog)

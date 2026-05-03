@@ -1,370 +1,316 @@
-// static/js/map.js
-
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Map page DOMContentLoaded. Starting auth check...");
     try {
         const authResponse = await fetchWithAuth(`${API_BASE_URL}/auth/users/me`);
         if (!authResponse.ok) {
-            console.error("Map page auth check failed. Status:", authResponse.status);
-            if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
-                window.location.href = '/login';
-            }
-            throw new Error('Not authenticated for map, redirecting to login.');
+            if (window.location.pathname !== '/login' && window.location.pathname !== '/') window.location.href = '/login';
+            throw new Error('Not authenticated');
         }
         const user = await authResponse.json();
-        console.log("User authenticated for map page:", user.email);
-        initializeMap(user); // Pass user if needed for any map logic
+        initializeMap(user);
     } catch (error) {
-        console.error("Map page initialization error:", error.message);
-        if (!getToken() && window.location.pathname !== '/login' && window.location.pathname !== '/') {
-            window.location.href = '/login';
-        }
+        console.error("Map init error:", error.message);
+        if (!getToken() && window.location.pathname !== '/login') window.location.href = '/login';
     }
 });
 
+let mapInstance = null;
+let currentStyle = 'dark';
+const DEFAULT_LAT = 22.7196;
+const DEFAULT_LNG = 75.8577;
+
+function setMapStyle(style) {
+    if (!mapInstance) return;
+    currentStyle = style;
+    const styles = {
+        dark: 'mapbox://styles/mapbox/dark-v11',
+        satellite: 'mapbox://styles/mapbox/satellite-streets-v12'
+    };
+    mapInstance.setStyle(styles[style]);
+    document.querySelectorAll('.map-style-toggle button').forEach(b => {
+        b.classList.toggle('active', b.textContent.toLowerCase() === style);
+    });
+    mapInstance.once('style.load', () => {
+        if (typeof reloadMapData === 'function') reloadMapData();
+    });
+}
+
 function initializeMap(loggedInUser) {
-    console.log("Initializing Leaflet map for Indore...");
+    mapboxgl.accessToken = MAPBOX_TOKEN;
 
-    const indoreLat = 22.7196;
-    const indoreLng = 75.8577;
-    const initialZoomLevel = 12;
-
-    const map = L.map('map').setView([indoreLat, indoreLng], initialZoomLevel);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    // Layer Groups
-    const zoneLayerGroup = L.layerGroup().addTo(map);
-    const cameraLayerGroup = L.layerGroup().addTo(map);
-    const poiLayerGroup = L.layerGroup().addTo(map);
-    const pathLayerGroup = L.layerGroup().addTo(map); // For conceptual alternate paths from zones
-    let diversionRouteLayer = null; // To store the OSRM route layer
-
-    // UI Elements
-    const pathInstructionsUl = document.getElementById('pathInstructions');
-    const alternatePathsDiv = document.getElementById('alternatePaths');
-    const routeStartSelect = document.getElementById('routeStartSelect');
-    const routeEndSelect = document.getElementById('routeEndSelect');
-    const findRouteButton = document.getElementById('findRouteButton');
-
-    let allPlottablePoints = []; // Stores {id, name, lat, lon, type} for routing dropdowns & live status
-    let cameraMarkers = {}; // Stores { cameraId: leafletMarker } for easy update
-
-    // --- Icon Definitions ---
-    const cameraIconDefault = L.icon({
-        iconUrl: '/static/icons/camera-icon.png',
-        iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]
-    });
-    const cameraIconCrowded = L.icon({
-        iconUrl: '/static/icons/camera-crowded-icon.png', // You need to create this
-        iconSize: [35, 35], iconAnchor: [17, 35], popupAnchor: [0, -33] // Slightly larger
-    });
-    const defaultPOIIcon = L.icon({
-        iconUrl: '/static/icons/default-marker.png',
-        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+    mapInstance = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/dark-v11',
+        center: [DEFAULT_LNG, DEFAULT_LAT],
+        zoom: 12
     });
 
-    // --- Styling Function for Zones ---
-    function getZoneStyle(zoneType) { /* ... (same as your existing good version) ... */ 
-        let style = { color: 'grey', fillColor: 'grey', weight: 2, opacity: 1, fillOpacity: 0.5, radius: 8 };
-        switch (zoneType) {
-            case 'camera_active': style = { ...style, color: 'blue', fillColor: 'blue', fillOpacity: 0.3, radius: 6 }; break;
-            case 'overcrowded': style = { ...style, color: 'red', fillColor: 'red' }; break;
-            case 'lockdown': style = { ...style, color: 'orange', fillColor: 'orange' }; break;
-            case 'conflict': style = { ...style, color: 'black', fillColor: 'black' }; break;
-            case 'safe': style = { ...style, color: 'green', fillColor: 'green' }; break;
+    mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    mapInstance.addControl(new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), 'top-left');
+
+    let allPoints = [];
+    let cameraMarkers = [];
+    let zoneMarkers = [];
+    let routeLayerAdded = false;
+    let liveStatuses = {};
+
+    function el(id) { return document.getElementById(id); }
+
+    function getZoneColor(type) {
+        const colors = { overcrowded: '#ef4444', lockdown: '#f59e0b', conflict: '#374151', safe: '#22c55e', camera_active: '#3b82f6' };
+        return colors[type] || '#6b7280';
+    }
+
+    function getCamCoords(cam) {
+        const lat = (cam.latitude != null && cam.latitude !== 0) ? cam.latitude : DEFAULT_LAT + (Math.random() - 0.5) * 0.04;
+        const lng = (cam.longitude != null && cam.longitude !== 0) ? cam.longitude : DEFAULT_LNG + (Math.random() - 0.5) * 0.04;
+        return [lng, lat];
+    }
+
+    async function fetchLiveStatuses() {
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/cameras/live_statuses/`);
+            if (res.ok) {
+                const statuses = await res.json();
+                liveStatuses = {};
+                Object.entries(statuses).forEach(([id, data]) => {
+                    liveStatuses[parseInt(id)] = data;
+                });
+            }
+        } catch (e) { console.warn("Live status fetch error:", e); }
+    }
+
+    function showCameraDetails(cam) {
+        el('noCamSelected').style.display = 'none';
+        el('camDetailsArea').style.display = 'block';
+        el('camLiveBadge').style.display = 'flex';
+
+        const feedUrl = `${API_BASE_URL}/stream/video_feed/${cam.id}`;
+        el('camFeedPreview').src = feedUrl;
+        el('camFeedPreview').onerror = function() { this.style.display = 'none'; };
+        el('camFeedPreview').onload = function() { this.style.display = 'block'; };
+
+        el('camDetailName').textContent = `${cam.area_name} - ${cam.name}`;
+        el('camDetailLocation').textContent = `📍 ${cam.area_name}, Indore, MP`;
+
+        const status = liveStatuses[cam.id];
+        const isOnline = status ? status.is_active : cam.is_active;
+        el('camDetailStatus').textContent = isOnline ? 'Online' : 'Offline';
+        el('camDetailStatus').className = 'cam-detail-val ' + (isOnline ? 'online' : 'alert');
+
+        const mode = typeof cam.mode === 'object' ? cam.mode.value : cam.mode;
+        el('camDetailMode').textContent = mode ? mode.charAt(0).toUpperCase() + mode.slice(1) : 'General';
+
+        const density = status && status.density != null ? status.density : null;
+        const personCount = status && status.person_count != null ? status.person_count : null;
+        if (density != null) {
+            el('camDetailDensity').textContent = density.toFixed(2) + ' p/m²';
+            el('camDetailDensity').className = 'cam-detail-val' + (density > 1 ? ' alert' : '');
+        } else {
+            el('camDetailDensity').textContent = personCount != null ? `${personCount} persons` : '--';
+            el('camDetailDensity').className = 'cam-detail-val';
         }
-        return style;
+
+        el('camDetailUpdated').textContent = status && status.last_updated
+            ? new Date(status.last_updated).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
+            : 'Just now';
+
+        el('camDetailLink').href = '/dashboard';
     }
 
-    // --- Data Loading Functions ---
-    async function loadZonesData() {
-        console.log("Loading zones for map...");
+    async function loadZones() {
         try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/zones/`);
-            if (!response.ok) throw new Error('Failed to fetch zones');
-            const zones = await response.json();
-            zoneLayerGroup.clearLayers(); // Clear previous zones
+            const res = await fetchWithAuth(`${API_BASE_URL}/zones/`);
+            if (!res.ok) return;
+            const zones = await res.json();
+            let safeCount = 0, overcrowdedCount = 0;
+
             zones.forEach(zone => {
-                const style = getZoneStyle(zone.type);
-                let marker;
-                if (zone.radius && zone.radius > 0) {
-                    marker = L.circle([zone.latitude, zone.longitude], { ...style, radius: zone.radius });
-                } else {
-                    marker = L.circleMarker([zone.latitude, zone.longitude], style);
-                }
-                marker.bindPopup(`<b>${zone.name}</b><br>Type: ${zone.type}${zone.description ? '<br>' + zone.description : ''}`);
-                marker.addTo(zoneLayerGroup);
-                allPlottablePoints.push({ id: `zone-${zone.id}`, name: `Zone: ${zone.name}`, lat: zone.latitude, lon: zone.longitude, type: 'zone' });
+                const color = getZoneColor(zone.type);
+                if (zone.type === 'safe') safeCount++;
+                if (zone.type === 'overcrowded') overcrowdedCount++;
+
+                const markerEl = document.createElement('div');
+                markerEl.style.cssText = `width:24px;height:24px;background:${color};border-radius:50%;border:2px solid rgba(255,255,255,0.3);box-shadow:0 0 10px ${color}80;cursor:pointer;`;
+
+                const popup = new mapboxgl.Popup({ offset: 15, className: 'dark-popup' }).setHTML(
+                    `<div style="min-width:150px;">
+                        <strong style="color:var(--text);font-size:0.95em;">${zone.name}</strong>
+                        <div style="margin-top:6px;font-size:0.82em;">
+                            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;"></span>
+                            ${zone.type.charAt(0).toUpperCase() + zone.type.slice(1)}
+                        </div>
+                        ${zone.description ? `<p style="margin-top:4px;font-size:0.8em;color:var(--text3);">${zone.description}</p>` : ''}
+                        ${zone.radius ? `<p style="font-size:0.78em;color:var(--text3);margin-top:4px;">Radius: ${zone.radius}m</p>` : ''}
+                    </div>`
+                );
+
+                const marker = new mapboxgl.Marker({ element: markerEl })
+                    .setLngLat([zone.longitude, zone.latitude])
+                    .setPopup(popup)
+                    .addTo(mapInstance);
+                zoneMarkers.push(marker);
+                allPoints.push({ name: `Zone: ${zone.name}`, lat: zone.latitude, lon: zone.longitude, type: 'zone' });
             });
-            console.log("Zones loaded and displayed:", zones.length);
-        } catch (error) { console.error("Error loading zones:", error); }
+
+            if (el('mapStatSafe')) el('mapStatSafe').textContent = safeCount;
+            if (el('mapStatOvercrowded')) {
+                el('mapStatOvercrowded').textContent = overcrowdedCount;
+                if (el('mapStatOvercrowdedSub')) {
+                    el('mapStatOvercrowdedSub').textContent = overcrowdedCount > 0 ? '● Requires Attention' : '● All Clear';
+                    el('mapStatOvercrowdedSub').className = 'stat-sub ' + (overcrowdedCount > 0 ? 'red' : 'green');
+                }
+            }
+        } catch (e) { console.error("Error loading zones:", e); }
     }
 
-    async function loadCamerasData() {
-        console.log("Loading camera locations for map...");
+    async function loadCameras() {
         try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/cameras/`);
-            if (!response.ok) throw new Error('Failed to fetch cameras');
-            const cameras = await response.json();
-            cameraLayerGroup.clearLayers(); // Clear previous cameras
-            cameraMarkers = {}; // Reset camera markers object
+            const res = await fetchWithAuth(`${API_BASE_URL}/cameras/`);
+            if (!res.ok) return;
+            const cameras = await res.json();
+            let activeCount = 0;
 
-            cameras.forEach(camera => {
-                if (camera.latitude != null && camera.longitude != null && camera.is_active) {
-                    const marker = L.marker([camera.latitude, camera.longitude], { icon: cameraIconDefault })
-                        .addTo(cameraLayerGroup);
-                    // Store original camera data with marker for popup updates
-                    marker.customData = camera; 
-                    // Initial popup content
-                    let popupContent = `<b>Cam: ${camera.name}</b><br>Area: ${camera.area_name}<br>Mode: ${camera.mode}`;
-                    if (isAdmin()) { // Only add button for admins
-                        popupContent += `<br><button class="suggest-diversion-btn" data-cameraid="${camera.id}" style="margin-top:5px; padding: 3px 6px; font-size:0.8em;">Suggest Diversion</button>`;
-                    }
-                    marker.bindPopup(popupContent);
-                    
-                    allPlottablePoints.push({ id: camera.id, name: `Cam: ${camera.name}`, lat: camera.latitude, lon: camera.longitude, type: 'camera' });
-                    cameraMarkers[camera.id] = marker; // Store marker for live updates
-                }
+            cameras.forEach((cam, idx) => {
+                const coords = getCamCoords(cam);
+                const isOnline = liveStatuses[cam.id] ? liveStatuses[cam.id].is_active : cam.is_active;
+                if (isOnline) activeCount++;
+
+                const density = liveStatuses[cam.id] ? liveStatuses[cam.id].density : null;
+                const isOvercrowded = density != null && density > 1.5;
+
+                const markerEl = document.createElement('div');
+                const bgColor = isOvercrowded ? 'rgba(239,68,68,0.9)' : 'rgba(59,130,246,0.9)';
+                const borderColor = isOvercrowded ? 'rgba(239,68,68,0.4)' : 'rgba(59,130,246,0.4)';
+                const glowColor = isOvercrowded ? 'rgba(239,68,68,0.3)' : 'rgba(59,130,246,0.3)';
+
+                markerEl.style.cssText = `width:34px;height:34px;background:${bgColor};border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid ${borderColor};box-shadow:0 0 14px ${glowColor};transition:transform 0.2s;`;
+                markerEl.innerHTML = '<svg width="16" height="16" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>';
+                markerEl.title = `${cam.name} - ${cam.area_name}`;
+
+                markerEl.addEventListener('mouseenter', () => { markerEl.style.transform = 'scale(1.15)'; });
+                markerEl.addEventListener('mouseleave', () => { markerEl.style.transform = 'scale(1)'; });
+
+                const marker = new mapboxgl.Marker({ element: markerEl, anchor: 'center' })
+                    .setLngLat(coords)
+                    .addTo(mapInstance);
+
+                markerEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showCameraDetails(cam);
+                    mapInstance.flyTo({ center: coords, zoom: 15, duration: 1000 });
+                });
+
+                cameraMarkers.push(marker);
+                allPoints.push({ name: `Cam: ${cam.name} (${cam.area_name})`, lat: coords[1], lon: coords[0], type: 'camera', id: cam.id });
             });
-            console.log("Cameras loaded and displayed:", Object.keys(cameraMarkers).length);
-        } catch (error) { console.error("Error loading cameras for map:", error); }
-    }
 
-    function displayPOIsData() {
-        console.log("Displaying hardcoded POIs...");
-        const indorePOIs = [
-            { name: "Rajwada Palace", lat: 22.7175, lon: 75.8555, description: "Historic palace." },
-            { name: "Khajrana Ganesh Temple", lat: 22.7400, lon: 75.9070, description: "Famous temple." }
-        ];
-        poiLayerGroup.clearLayers(); // Clear previous POIs
-        indorePOIs.forEach(poi => {
-            const marker = L.marker([poi.lat, poi.lon], { icon: defaultPOIIcon }).addTo(poiLayerGroup);
-            marker.bindPopup(`<b>${poi.name}</b>${poi.description ? '<br>' + poi.description : ''}`);
-            allPlottablePoints.push({ id: `poi-${poi.name.replace(/\s+/g, '-')}`, name: `POI: ${poi.name}`, lat: poi.lat, lon: poi.lon, type: 'poi' });
-        });
-        console.log("POIs displayed:", indorePOIs.length);
+            if (el('mapStatCameras')) el('mapStatCameras').textContent = activeCount;
+        } catch (e) { console.error("Error loading cameras:", e); }
     }
 
     function populateRoutingSelects() {
-        if (!routeStartSelect || !routeEndSelect) { console.warn("Routing select elements not found."); return; }
-        routeStartSelect.innerHTML = '<option value="">-- Select Start Point --</option>';
-        routeEndSelect.innerHTML = '<option value="">-- Select End Point --</option>';
-        allPlottablePoints.sort((a, b) => a.name.localeCompare(b.name));
-        allPlottablePoints.forEach(point => {
-            const option = document.createElement('option');
-            option.value = `${point.lat},${point.lon}`;
-            option.textContent = point.name;
-            option.dataset.id = point.id; // Store ID if needed
-            option.dataset.type = point.type;
-            routeStartSelect.appendChild(option.cloneNode(true));
-            routeEndSelect.appendChild(option);
+        const start = el('routeStartSelect');
+        const end = el('routeEndSelect');
+        if (!start || !end) return;
+        start.innerHTML = '<option value="">Select start location</option>';
+        end.innerHTML = '<option value="">Select end location</option>';
+        allPoints.sort((a, b) => a.name.localeCompare(b.name));
+        allPoints.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = `${p.lon},${p.lat}`;
+            opt.textContent = p.name;
+            start.appendChild(opt.cloneNode(true));
+            end.appendChild(opt);
         });
-        console.log("Routing dropdowns populated.");
     }
 
-    async function updateLiveCameraStatusesOnMap() {
-        console.log("Updating live camera statuses on map...");
+    async function findRoute(startCoords, endCoords) {
+        if (routeLayerAdded) {
+            if (mapInstance.getLayer('route-line')) mapInstance.removeLayer('route-line');
+            if (mapInstance.getLayer('route-outline')) mapInstance.removeLayer('route-outline');
+            if (mapInstance.getSource('route')) mapInstance.removeSource('route');
+            routeLayerAdded = false;
+        }
         try {
-            // THIS ENDPOINT NEEDS TO BE CREATED ON YOUR BACKEND (/api/cameras/live_statuses/)
-            // It should return data from your live_status_manager
-            const response = await fetchWithAuth(`${API_BASE_URL}/cameras/live_statuses/`);
-            if (!response.ok) { console.warn("Failed to fetch live camera statuses."); return; }
-            const liveStatuses = await response.json(); // Expected format: { camera_id: {is_over_threshold: true/false, person_count: X, ...}, ... }
-            console.log("Live statuses received:", liveStatuses);
+            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startCoords};${endCoords}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_TOKEN}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Directions API failed');
+            const data = await res.json();
+            if (!data.routes || data.routes.length === 0) { alert('No route found.'); return; }
 
-            for (const camId in liveStatuses) {
-                if (cameraMarkers[camId] && liveStatuses.hasOwnProperty(camId)) {
-                    const status = liveStatuses[camId];
-                    const marker = cameraMarkers[camId];
-                    const newIcon = status.is_over_threshold ? cameraIconCrowded : cameraIconDefault;
-                    if (marker.getIcon() !== newIcon) { // Avoid unnecessary icon redraw
-                        marker.setIcon(newIcon);
-                    }
-                    // Update popup content if needed (more complex, as popup needs to be open or reopened)
-                    // For simplicity, we'll just update the icon for now.
-                    // A better way is to update marker.customData and rebuild popup on open.
-                    marker.customData.is_over_threshold = status.is_over_threshold; // Store for diversion button logic
-                    marker.customData.person_count = status.person_count; // Store for popup
-                    
-                    // Update existing popup if open
-                    if (marker.isPopupOpen()) {
-                        let newPopupContent = `<b>Cam: ${marker.customData.name}</b><br>Area: ${marker.customData.area_name}<br>Mode: ${marker.customData.mode}`;
-                        newPopupContent += `<br>Persons: ${status.person_count || 'N/A'}`;
-                        if (status.is_over_threshold) newPopupContent += ` <span style="color:red;">(Crowded!)</span>`;
-                        if (isAdmin()) {
-                           newPopupContent += `<br><button class="suggest-diversion-btn" data-cameraid="${camId}" style="margin-top:5px; padding: 3px 6px; font-size:0.8em;">Suggest Diversion</button>`;
-                        }
-                        marker.setPopupContent(newPopupContent);
-                    }
+            const route = data.routes[0];
+            mapInstance.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: route.geometry } });
+            mapInstance.addLayer({ id: 'route-outline', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#155e2a', 'line-width': 10, 'line-opacity': 0.4 } });
+            mapInstance.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#22c55e', 'line-width': 5, 'line-opacity': 0.9 } });
+            routeLayerAdded = true;
+
+            const coords = route.geometry.coordinates;
+            const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+            mapInstance.fitBounds(bounds, { padding: 80, duration: 1200 });
+
+            const distKm = (route.distance / 1000).toFixed(1);
+            const timeMin = Math.round(route.duration / 60);
+            const pathEl = el('alternatePaths');
+            const instrEl = el('pathInstructions');
+            if (pathEl && instrEl) {
+                pathEl.style.display = 'block';
+                let html = `<li style="padding:8px 0;color:var(--text);font-size:0.9em;font-weight:600;">📍 Route: ${distKm} km, ~${timeMin} min</li>`;
+                if (route.legs && route.legs[0] && route.legs[0].steps) {
+                    route.legs[0].steps.slice(0, 8).forEach((step, i) => {
+                        html += `<li style="padding:4px 0 4px 12px;color:var(--text2);font-size:0.82em;border-left:2px solid var(--border);">${i + 1}. ${step.maneuver.instruction} <span style="color:var(--text3);">(${(step.distance / 1000).toFixed(1)}km)</span></li>`;
+                    });
                 }
+                instrEl.innerHTML = html;
             }
-        } catch (error) {
-            console.error("Error updating live camera statuses on map:", error);
+        } catch (e) {
+            console.error("Route error:", e);
+            alert("Could not find route: " + e.message);
         }
     }
 
-
-    // --- Diversion Logic ---
-    async function getDiversionSuggestionFromServer(crowdedCamId) {
-        console.log("Requesting diversion suggestion for camera ID:", crowdedCamId);
-        if (diversionRouteLayer) map.removeLayer(diversionRouteLayer);
-        if (pathInstructionsUl) pathInstructionsUl.innerHTML = '';
-        if (alternatePathsDiv) alternatePathsDiv.style.display = 'none';
-
-        try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/diversions/suggest_diversion/`, {
-                 method: 'POST',
-                 headers: {'Content-Type': 'application/json'},
-                 body: JSON.stringify({ crowded_camera_id: parseInt(crowdedCamId) }) // Ensure ID is int
-            });
-            if (!response.ok) { const err = await response.json(); throw new Error(err.detail || "Failed to get suggestion"); }
-            const suggestion = await response.json();
-            console.log("Diversion suggestion received:", suggestion);
-            displayDiversionOnMap(suggestion);
-        } catch (error) {
-            console.error("Error getting diversion suggestion:", error);
-            alert("Could not calculate diversion: " + error.message);
-        }
-    }
-
-    function displayDiversionOnMap(suggestion) {
-        // Clear previous highlights or routes
-        if (diversionRouteLayer) map.removeLayer(diversionRouteLayer);
-        pathLayerGroup.clearLayers(); // Clear conceptual alternate paths too
-        
-        // Highlight crowded camera marker
-        if (suggestion.crowded_camera && cameraMarkers[suggestion.crowded_camera.id]) {
-            // cameraMarkers[suggestion.crowded_camera.id].setIcon(cameraIconCrowded); // Already set by live status
-        }
-        // Highlight target camera marker
-        if (suggestion.target_camera && cameraMarkers[suggestion.target_camera.id]) {
-            // Consider a 'target' icon or a temporary circle
-             L.circleMarker([suggestion.target_camera.latitude, suggestion.target_camera.longitude], {
-                color: 'lime', fillColor: 'lime', fillOpacity: 0.7, radius: 10, weight:3
-            }).bindPopup(`Target: ${suggestion.target_camera.name}`).addTo(pathLayerGroup); // Add to path layer
-        }
-
-        if (suggestion.route_geojson) {
-            diversionRouteLayer = L.geoJSON(suggestion.route_geojson, {
-                style: () => ({ color: "#00e676", weight: 6, opacity: 0.85 }) // Bright green route
-            }).addTo(map);
-            if (diversionRouteLayer.getBounds().isValid()) {
-                map.fitBounds(diversionRouteLayer.getBounds().pad(0.2));
-            }
-        }
-
-        if (alternatePathsDiv && pathInstructionsUl) {
-            alternatePathsDiv.style.display = 'block';
-            pathInstructionsUl.innerHTML = `<li><b>${suggestion.message}</b></li>`;
-            if (suggestion.target_camera) {
-                 pathInstructionsUl.innerHTML += `<li>Target: ${suggestion.target_camera.name} (Currently: ${suggestion.target_camera.person_count || suggestion.target_camera.current_crowd || 'N/A'} people)</li>`;
-            }
-            // OSRM often returns distance/time in the GeoJSON properties or directly if structured by backend
-            // This part depends on the exact structure of `route_geojson` from your backend
-            if (suggestion.route_geojson && suggestion.route_geojson.properties && suggestion.route_geojson.properties.summary) {
-                const summary = suggestion.route_geojson.properties.summary; // Assuming OSRM-like structure
-                pathInstructionsUl.innerHTML += `<li>Route: Approx. ${(summary.totalDistance / 1000).toFixed(1)} km, ${Math.round(summary.totalTime / 60)} min.</li>`;
-            } else if (suggestion.route_geojson && suggestion.route_geojson.summary) { // If backend puts it at top level
-                 const summary = suggestion.route_geojson.summary;
-                 pathInstructionsUl.innerHTML += `<li>Route: Approx. ${(summary.totalDistance / 1000).toFixed(1)} km, ${Math.round(summary.totalTime / 60)} min.</li>`;
-            }
-        }
-        if(!suggestion.route_geojson && suggestion.message) {
-            alert(suggestion.message); // Show message if no route but suggestion exists
-        }
-    }
-
-
-    // --- Event Listeners ---
-    map.on('popupopen', function(e) { // Event delegation for buttons inside popups
-        const diversionButton = e.popup._contentNode.querySelector('.suggest-diversion-btn');
-        if (diversionButton) {
-            diversionButton.addEventListener('click', function(event) {
-                event.preventDefault(); // Prevent any default action if button is in a form
-                const camId = this.dataset.cameraid;
-                console.log("Suggest Diversion button in popup clicked for camera ID:", camId);
-                getDiversionSuggestionFromServer(camId);
-                map.closePopup();
-            });
-        }
-    });
-
-    if (findRouteButton) {
-        findRouteButton.addEventListener('click', () => { /* ... (same as your existing routing logic) ... */ });
-    }
-
-
-    // --- Main Data Loading Orchestration ---
-    async function loadAllMapFeaturesAndFitView() {
-        console.log("Loading all map features...");
-        allPlottablePoints = []; // Reset for fresh load
-
-        // Show loading state (optional simple text)
-        const mapLoadingMessage = L.control({position: 'topright'});
-        mapLoadingMessage.onAdd = function (map) {
-            this._div = L.DomUtil.create('div', 'map-loading-message');
-            this._div.innerHTML = '<h4>Loading Map Data...</h4>';
-            return this._div;
-        };
-        mapLoadingMessage.addTo(map);
-
-
-        await Promise.all([ // Load zones and cameras in parallel
-            loadZonesData(),
-            loadCamerasData()
-        ]);
-        displayPOIsData(); // POIs are static, load after async data
-
-        populateRoutingSelects();
-
-        map.removeControl(mapLoadingMessage); // Hide loading message
-
-        let bounds = L.latLngBounds();
-        allPlottablePoints.forEach(p => {
-            if (typeof p.lat === 'number' && typeof p.lon === 'number') {
-                bounds.extend([p.lat, p.lon]);
-            }
+    if (el('findRouteButton')) {
+        el('findRouteButton').addEventListener('click', () => {
+            const start = el('routeStartSelect')?.value;
+            const end = el('routeEndSelect')?.value;
+            if (!start || !end) { alert('Select both start and end points.'); return; }
+            if (start === end) { alert('Start and end must be different.'); return; }
+            findRoute(start, end);
         });
-
-        if (bounds.isValid() && allPlottablePoints.length > 0) {
-            map.fitBounds(bounds, { padding: [40, 40] });
-        } else {
-            map.setView([indoreLat, indoreLng], initialZoomLevel);
-        }
-        
-        // Start live status updates after initial load
-        await updateLiveCameraStatusesOnMap(); // Initial status update
-        setInterval(updateLiveCameraStatusesOnMap, 15000); // Then update every 15 seconds
     }
 
-    // Initial Load
-    loadAllMapFeaturesAndFitView();
-    console.log("Leaflet map initialized for Indore and initial features loaded.");
-}
+    function updateTimeStats() {
+        const now = new Date();
+        if (el('mapStatTime')) el('mapStatTime').textContent = now.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+        if (el('mapStatTimeSub')) el('mapStatTimeSub').textContent = '● Just now';
+    }
 
-// Leaflet Destination Point Helper (if not part of your Leaflet version)
-// Ensure L.CRS.EPSG3857.toRadians and toDegrees are available.
-if (L.CRS && L.CRS.EPSG3857 && typeof L.CRS.EPSG3857.toRadians === 'undefined') {
-    L.CRS.EPSG3857.toRadians = function(angleDegrees) { return angleDegrees * Math.PI / 180; };
-    L.CRS.EPSG3857.toDegrees = function(angleRadians) { return angleRadians * 180 / Math.PI; };
-}
-
-if (typeof L.LatLng.prototype.destinationPoint === 'undefined') {
-    L.LatLng.prototype.destinationPoint = function (bearing, distance) {
-        const R = 6371e3; // Earth's radius in meters
-        const CRS = this.options && this.options.crs ? this.options.crs : (L.CRS.EPSG3857 || L.CRS.Earth); // Be more robust
-        const b = CRS.toRadians(bearing);
-        const d = distance;
-        const lat1 = CRS.toRadians(this.lat);
-        const lon1 = CRS.toRadians(this.lng);
-        const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) +
-            Math.cos(lat1) * Math.sin(d / R) * Math.cos(b));
-        const lon2 = lon1 + Math.atan2(Math.sin(b) * Math.sin(d / R) * Math.cos(lat1),
-            Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
-        return L.latLng(CRS.toDegrees(lat2), CRS.toDegrees(lon2));
+    window.reloadMapData = async function () {
+        allPoints = [];
+        cameraMarkers.forEach(m => m.remove());
+        cameraMarkers = [];
+        zoneMarkers.forEach(m => m.remove());
+        zoneMarkers = [];
+        await fetchLiveStatuses();
+        await Promise.all([loadZones(), loadCameras()]);
+        populateRoutingSelects();
+        updateTimeStats();
     };
+
+    mapInstance.on('load', async () => {
+        await fetchLiveStatuses();
+        await Promise.all([loadZones(), loadCameras()]);
+        populateRoutingSelects();
+        updateTimeStats();
+
+        if (allPoints.length > 0) {
+            const bounds = allPoints.reduce((b, p) => b.extend([p.lon, p.lat]),
+                new mapboxgl.LngLatBounds([allPoints[0].lon, allPoints[0].lat], [allPoints[0].lon, allPoints[0].lat]));
+            mapInstance.fitBounds(bounds, { padding: 80, duration: 1500, maxZoom: 14 });
+        }
+
+        setInterval(async () => {
+            await fetchLiveStatuses();
+            updateTimeStats();
+        }, 30000);
+    });
 }
