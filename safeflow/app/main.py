@@ -49,12 +49,12 @@ def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        admin_user = crud_user.get_user_by_email(db, email="admin@example.com")
+        admin_user = crud_user.get_user_by_email(db, email="admin@safeflow.com")
         if not admin_user:
-            print("Creating default admin user: admin@example.com / adminpassword")
+            print("Creating default admin user: admin@safeflow.com / admin@1234")
             admin_in = user_schema.UserCreate(
-                email="admin@example.com",
-                password="adminpassword",  # WARNING: change this in production
+                email="admin@safeflow.com",
+                password="admin@1234",
                 role=user_schema.UserRole.ADMIN
             )
             crud_user.create_user(db, admin_in)
@@ -65,7 +65,7 @@ def create_db_and_tables():
 async def on_startup():
     create_db_and_tables()
     print("SafeFlow Application Started")
-    print("Default Admin: admin@example.com / adminpassword (if created)")
+    print("Default Admin: admin@safeflow.com / admin@1234 (if created)")
     print("Access at http://localhost:8000")
 
 # --- HTML Pages ---
