@@ -36,11 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
     
-                    const data = await response.json();
-    
                     if (response.ok) {
+                        const data = await response.json();
                         setToken(data.access_token);
-                        // Fetch user role after login to store it
                         const userResponse = await fetchWithAuth(`${API_BASE_URL}/auth/users/me`);
                         if (userResponse.ok) {
                             const userData = await userResponse.json();
@@ -48,11 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         window.location.href = '/dashboard';
                     } else {
-                        loginError.textContent = data.detail || 'Login failed. Please check your credentials.';
+                        let msg = 'Incorrect email or password';
+                        try {
+                            const errData = await response.json();
+                            if (errData.detail) msg = errData.detail;
+                        } catch(e) {}
+                        loginError.textContent = msg;
                     }
                 } catch (error) {
                     console.error('Login error:', error);
-                    loginError.textContent = 'An error occurred. Please try again.';
+                    loginError.textContent = 'Server error. Please try again later.';
                 }
             });
         }

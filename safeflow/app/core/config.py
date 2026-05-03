@@ -15,15 +15,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
     # Email
-    SMTP_SERVER: str = os.getenv("SMTP_SERVER")
+    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
-    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME")
-    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD")
-    ALERT_EMAIL_RECEIVER: str = os.getenv("ALERT_EMAIL_RECEIVER")
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    ALERT_EMAIL_RECEIVER: str = os.getenv("ALERT_EMAIL_RECEIVER", "")
 
     # Telegram
-    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN")
-    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID")
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
     
     # YOLO
     YOLO_MODEL_PATH: str = os.getenv("YOLO_MODEL_PATH", "yolov8n.pt")
